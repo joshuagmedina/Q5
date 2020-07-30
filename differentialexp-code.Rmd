@@ -1,0 +1,232 @@
+---
+title: "Analysis of Unknown Transcripts"
+author: "Joshua Medina"
+date: "7/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+####Loading database and setting the directory.
+
+```{r, message = FALSE, warning = FALSE}
+
+suppressMessages(library(DESeq2))
+suppressMessages(library(gplots))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(EnhancedVolcano))
+suppressMessages(library(tidyverse))
+suppressMessages(library(gridExtra))
+suppressMessages(library(grid))
+suppressMessages(library(ggplot2))
+suppressMessages(library(scales))
+suppressMessages(library(ggpubr))
+
+```
+
+####Loading the data
+
+```{r}
+
+ddata <- read.table("data/pdata.txt", header = TRUE)
+
+```
+
+Generating the data set with respect to the counts. Here the count files generated with salmon are going to be used for the DGE quantification.
+Note: We have to change the ID of our transcripts of interests in order to visualize them better further in our analysis.
+
+  - Transcript_411139 = TRINITY_DN1758_c0_g1_i6 = FReD1
+  - Transcript_456418 = TRINITY_DN35952_c0_g1_i1 = FReD2
+  - Transcript_201140 = TRINITY_DN59828_c0_g4_i1 = FReD3
+  - Transcript_369809 = TRINITY_DN23328_c0_g1_i1 = FReD4
+  - Transcript_299020 = TRINITY_DN428_c2_g1_i1 = FReD5
+  - Transcript_330815 = TRINITY_DN11691_c0_g1_i5 = FN31
+  - Transcript_202375 = TRINITY_DN1286_c0_g1_i2 = EGF1
+  - Transcript_339471 = TRINITY_DN6966_c0_g1_i4 = EGF2
+  - Transcript_339473 = TRINITY_DN6966_c0_g1_i7 = EGF3
+  - Transcript_257591 = TRINITY_DN83143_c0_g1_i2 = EGF4
+  - Transcript_298293 = TRINITY_DN485_c0_g1_i1 = FN32
+
+```{r, message=FALSE}
+
+ddsSTAR <- DESeqDataSetFromHTSeqCount(sampleTable = ddata, directory = "counts_global", design = ~ condition)
+
+colData(ddsSTAR)$condition <- factor(colData(ddsSTAR)$condition, levels = levels(ddata$condition))
+
+
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN1758_c0_g1_i6'] <- 'T_FReD1'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN35952_c0_g1_i1'] <- 'T_FReD2'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN59828_c0_g4_i1'] <- 'T_FReD3'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN23328_c0_g1_i1'] <- 'T_FReD4'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN428_c2_g1_i1'] <- 'T_FReD5'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN11691_c0_g1_i5'] <- 'T_FN31'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN1286_c0_g1_i2'] <- 'T_EGF1'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN6966_c0_g1_i4'] <- 'T_EGF2'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN6966_c0_g1_i7'] <- 'T_EGF3'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN83143_c0_g1_i2'] <- 'T_EGF4'
+ddsSTAR@rowRanges@partitioning@NAMES[ddsSTAR@rowRanges@partitioning@NAMES == 'TRINITY_DN485_c0_g1_i1'] <- 'T_FN32'
+
+```
+
+Estimating the size factors using _"median ratio method"_, dispersions (gene-wise, mean-dispersion relationship, final dispersion estimates). Generating the counts table with _counts_ function.
+
+```{r}
+
+dds <- estimateSizeFactors(ddsSTAR)
+dds <- estimateDispersions(dds)
+dds <- nbinomWaldTest(dds)
+counts_table <- counts(dds, normalized=TRUE)
+
+```
+
+
+Results of contrasts between conditions (1DPE vs NORMAL; 3DPE vs NORMAL). __Note: Normal tissue is referred as non regenerated mesentery tissue of the sea cucumber.__
+
+```{r}
+
+res_1DPE <- results(dds, contrast = c("condition", "1DPE", "Control"))
+res_1DPE <- res_1DPE[order(res_1DPE$padj),]
+
+res_3DPE <- results(dds, contrast = c("condition", "3DPE", "Control"))
+res_3DPE <- res_3DPE[order(res_3DPE$padj),]
+
+```
+
+
+####Visualization of the results.
+
+***
+
+Plotting dispersion estimates.
+
+```{r, fig.align = 'center'}
+
+DESeq2::plotDispEsts(dds,main="Dispersion Plot")
+
+```
+
+
+####Raw Data vs Normalized Data Counts.
+
+```{r, fig.align = 'center'}
+
+conds <- as.vector(ddata$condition)
+condcols <- brewer.pal(n = length(unique(conds)), name="Dark2") 
+par(mfrow=c(1,2))
+barplot(colSums(counts(dds, normalized=F)), col = condcols[as.factor(conds)], las = 2, cex.names=0.4, main="Raw Counts")
+barplot(colSums(counts(dds, normalized=T)), col=condcols[as.factor(conds)], las=2, cex.names = 0.4, main = "Normalized Counts")
+
+```
+
+####PCA Plot -- to see the relationship between datasets.
+
+```{r, fig.align = 'center'}
+
+vsd <- varianceStabilizingTransformation(dds)
+PCA <- DESeq2::plotPCA(vsd)+theme_bw()+
+  theme(panel.grid.minor = element_blank(), panel.border = element_rect(fill=NA, colour = "black", size=1.5))
+
+PCA
+
+```
+
+####Processing Data
+
+Even though we already saved the data we are going to do some further data wrangling in order to obtain the information we want in the way we need it.
+
+```{r}
+
+
+res1dpe <- as.data.frame(res_1DPE)
+res1dpe$names <- rownames(res1dpe)
+rownames(res1dpe) <- NULL
+
+res3dpe <- as.data.frame(res_3DPE)
+res3dpe$names <- rownames(res3dpe)
+rownames(res3dpe) <- NULL
+
+
+transcripts.1dpe <- res1dpe %>% filter(grepl('T_', names)) %>% add_column(condition = '1dpe')
+transcripts.3dpe <- res3dpe %>% filter(grepl('T_', names)) %>% add_column(condition = '3dpe')
+
+transcripts <- rbind(transcripts.1dpe, transcripts.3dpe)
+transcripts$color <- ifelse(transcripts$padj < 0.05, 'yes', 'no')
+transcripts$color2 <- ifelse(transcripts$pvalue < 0.05, 'yes', 'no')
+
+```
+
+#### Generating the plots to visualize the expression and significance of our transcripts.
+
+```{r, fig.align = 'center', message=FALSE, fig.width=12, fig.height=8}
+
+
+plot1 <- ggplot(transcripts) + ggtitle("Significance based on FDR. (padj<0.05)") +
+  geom_point(aes(x = log2FoldChange, y = padj, color = color), position = position_jitter(w = 0.1, h = 0)) +
+  xlab("log2FC") + ylab("FDR") + theme_bw() + 
+  theme(axis.text.x = element_text(angle = 0, hjust = 0), plot.title = element_text(size = 12),
+        legend.position = "none", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_y_continuous(trans='log2') + geom_hline(yintercept = 0.05, colour = "grey40") + geom_vline(xintercept = c(-2,2), colour = "grey40", size = 0.3, linetype = 3) +
+  geom_text(data = subset(transcripts, padj < 0.05), aes(log2FoldChange, padj, label = names), hjust=0.3,vjust=-0.5)
+
+plot1.b <- ggplot(transcripts) + ggtitle("Significance based on pValue. (pVal<0.05)") +
+  geom_point(aes(x = log2FoldChange, y = pvalue, color = color2)) +
+  xlab("log2FC") + ylab("p-Value") + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 0, hjust = 0), plot.title = element_text(size = 12),
+          legend.position = "none", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  scale_y_continuous(trans='log2') + geom_hline(yintercept = 0.05, colour = "grey40") + geom_vline(xintercept = c(-2,2), colour = "grey40", size = 0.3, linetype = 3) +
+  geom_text(data = subset(transcripts, pvalue < 0.05), aes(log2FoldChange, pvalue, label = names), hjust=0,vjust=0, position=position_jitter(width=-1,height=1))
+
+ggarrange(plot1.b, plot1, 
+          labels = c("A", "B"),
+          ncol = 2)
+
+```
+
+
+```{r, fig.align = 'center', message=FALSE, fig.width=12, fig.height=8}
+
+
+plot2 <- ggplot(transcripts) + ggtitle("Log2FoldChange Expression of Transcripts.") +
+  geom_bar (aes(x = names, y = log2FoldChange, fill = condition), stat = "identity", position=position_dodge()) +
+  xlab("Transcripts") + ylab("Log2FC") + theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(size = 12),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  scale_fill_manual(name = "Conditions", values = c("#C8E4E7", "#3D9EB5")) +
+  geom_hline(yintercept = c(-2,2), colour = "grey40", size = 0.3, linetype = 3)
+
+plot3 <- ggplot(data = subset(transcripts, color == 'yes')) + ggtitle("Log2FoldChange Expression of Transcripts (FDR<0.05).") +
+  geom_point(aes(x = names, y = log2FoldChange, color = names), stat = "identity", position = position_jitter(w = 0.07, h = 0)) +
+  xlab("Transcripts") + ylab("log2FC") + theme_bw() +
+  theme(axis.text.x = element_text(angle = 0), legend.position = "none", plot.title = element_text(size = 12),
+        panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank()) +
+  geom_hline(yintercept = c(2, -2), colour = "grey40", linetype = 2) +
+  scale_y_continuous(breaks=seq(-10,4,2)) 
+
+
+plot3.b <- ggplot(data = subset(transcripts, color2 == 'yes')) + ggtitle("Log2FoldChange Expression of Transcripts (pVal<0.05).") +
+  geom_point(aes(x = names, y = log2FoldChange, color = names), stat = "identity", position = position_jitter(w = 0.07, h = 0)) +
+  xlab("Transcripts") + ylab("log2FC") + theme_bw() +
+  theme(axis.text.x = element_text(angle = 0), legend.position = "none", plot.title = element_text(size = 12),
+        panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank()) +
+  geom_hline(yintercept = c(2, -2), colour = "grey40", linetype = 2) +
+  scale_y_continuous(breaks=seq(-10,4,2)) 
+
+
+ggarrange(plot2,                                                 # First row with barplot
+          ggarrange(plot3, plot3.b, ncol = 2, labels = c("B", "C")), # Second row with scatter plots
+          nrow = 2, 
+          labels = "A"                                        # Labels of the barplot
+          ) 
+
+```
+
+```{r}
+
+
+plotCounts(dds, gene="T_EGF1", intgroup="condition")
+
+```
+
+
